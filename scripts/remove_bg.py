@@ -22,7 +22,7 @@ def main():
         from PIL import Image
     except ImportError as e:
         print(f"Error: Required module not installed - {e}")
-        print("Please install with: pip3 install rembg pillow")
+        print("Please install with: uv pip install -r requirements.txt")
         sys.exit(1)
 
     try:

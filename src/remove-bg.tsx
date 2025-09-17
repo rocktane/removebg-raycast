@@ -91,7 +91,7 @@ def main():
         from PIL import Image
     except ImportError as e:
         print(f"Error: Required module not installed - {e}")
-        print("Please install with: pip3 install rembg pillow")
+        print("Please install with: uv pip install rembg pillow")
         sys.exit(1)
 
     try:
@@ -189,13 +189,13 @@ if __name__ == "__main__":
         await showToast({
           style: Toast.Style.Failure,
           title: "REMBG Not Installed",
-          message: "Run: pip3 install rembg pillow",
+          message: "Run: uv pip install rembg pillow",
         });
       } else if (error.message.includes("No module named 'onnxruntime'")) {
         await showToast({
           style: Toast.Style.Failure,
           title: "ONNXRuntime Not Installed",
-          message: "Run: pip3 install onnxruntime",
+          message: "Run: uv pip install onnxruntime",
         });
       } else {
         await showToast({

@@ -20,9 +20,19 @@ Before using this extension, you need to install Python and the required package
    brew install python3
    ```
 
-2. **Required Python packages**:
+2. **UV** (modern Python package manager):
    ```bash
-   pip3 install rembg pillow
+   # Using Homebrew
+   brew install uv
+   # Or using curl
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+
+3. **Required Python packages**:
+   ```bash
+   uv pip install -r requirements.txt
+   # Or install directly:
+   uv pip install rembg pillow
    ```
 
    This will install:
@@ -38,19 +48,24 @@ Before using this extension, you need to install Python and the required package
    cd removebg-raycast
    ```
 
-2. Install dependencies:
+2. Install Node.js dependencies with pnpm:
    ```bash
-   npm install
+   pnpm install
    ```
 
-3. Build the extension:
+3. Install Python dependencies with uv:
    ```bash
-   npm run build
+   uv pip install -r requirements.txt
    ```
 
-4. Import to Raycast:
+4. Build the extension:
    ```bash
-   npm run publish
+   pnpm run build
+   ```
+
+5. Import to Raycast:
+   ```bash
+   pnpm run publish
    ```
 
    Or manually import via Raycast preferences.
@@ -97,7 +112,9 @@ Make sure Python 3 is installed and accessible. The extension looks for Python i
 ### "REMBG Not Installed" error
 Install the required packages:
 ```bash
-pip3 install rembg pillow
+uv pip install -r requirements.txt
+# Or install directly:
+uv pip install rembg pillow
 ```
 
 ### "No Image Selected" error
@@ -110,22 +127,23 @@ The first time you use the extension, rembg will download its AI model (~180MB).
 
 ### Setup
 ```bash
-npm install
+pnpm install
+uv pip install -r requirements.txt
 ```
 
 ### Development mode
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 ### Build
 ```bash
-npm run build
+pnpm run build
 ```
 
 ### Lint
 ```bash
-npm run lint
+pnpm run lint
 ```
 
 ## Project Structure
@@ -133,11 +151,12 @@ npm run lint
 ```
 removebg-raycast/
 ├── src/
-│   ├── remove-bg.tsx     # Main background removal command
-│   └── test-paths.tsx    # Debug command for testing Python paths
+│   └── remove-bg.tsx     # Main background removal command
 ├── scripts/
 │   └── remove_bg.py      # Python script for background removal
 ├── package.json          # Project configuration
+├── pnpm-lock.yaml        # pnpm lock file
+├── requirements.txt      # Python dependencies
 ├── tsconfig.json         # TypeScript configuration
 └── README.md            # This file
 ```

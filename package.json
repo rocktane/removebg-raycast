@@ -14,33 +14,26 @@
       "subtitle": "Process selected image in Finder",
       "description": "Removes the background from the selected image in Finder and saves it with -bg suffix",
       "mode": "no-view"
-    },
-    {
-      "name": "test-paths",
-      "title": "Test Extension Paths",
-      "subtitle": "Debug path issues",
-      "description": "Tests if Python and script paths are accessible",
-      "mode": "no-view"
     }
   ],
   "dependencies": {
-    "@raycast/api": "^1.83.2",
-    "@raycast/utils": "^1.17.0"
+    "@raycast/api": "^1.103.1",
+    "@raycast/utils": "^2.2.1"
   },
   "devDependencies": {
-    "@raycast/eslint-config": "^1.0.8",
-    "@types/node": "20.8.10",
-    "@types/react": "18.3.3",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.3",
-    "typescript": "^5.4.5"
+    "@raycast/eslint-config": "^2.0.4",
+    "@types/node": "24.5.1",
+    "@types/react": "19.1.13",
+    "eslint": "^9.35.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2"
   },
   "scripts": {
     "build": "ray build --skip-types -e dist -o dist && cp -r scripts dist/",
     "dev": "ray develop",
     "fix-lint": "ray lint --fix",
     "lint": "ray lint",
-    "prepublishOnly": "echo \"\\n\\nDon't forget to run 'npm run build'\\n\\n\"; exit 1",
+    "prepublishOnly": "echo \"\\n\\nDon't forget to run 'pnpm run build'\\n\\n\"; exit 1",
     "publish": "npx @raycast/api@latest publish"
   }
 }

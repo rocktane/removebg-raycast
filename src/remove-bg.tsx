@@ -150,7 +150,8 @@ export default async function Command() {
     const outputPath = path.join(dir, `${basename}-bg${outputExt}`);
 
     // Use existing Python script from scripts directory
-    const scriptPath = path.join(__dirname, "..", "scripts", "remove_bg.py");
+    // In production, scripts are copied to dist/scripts
+    const scriptPath = path.join(__dirname, "scripts", "remove_bg.py");
 
     // Find Python with caching
     const pythonPath = await findPythonPath();

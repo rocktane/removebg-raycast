@@ -173,7 +173,7 @@ MIT License - See [LICENSE](LICENSE) file for details.
 
 ## Author
 
-Created by Yohan
+Created by [@rocktane](https://github.com/rocktane)
 
 ---
 

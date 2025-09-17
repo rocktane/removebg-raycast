@@ -38,7 +38,6 @@ def main():
 
         if output_ext == '.webp':
             # For WebP, we need to use PIL to save with proper settings
-            from io import BytesIO
             img = Image.open(BytesIO(output_data))
             img.save(output_path, 'WEBP', lossless=True)
         else:

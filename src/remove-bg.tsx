@@ -1,4 +1,12 @@
-import { showToast, Toast, getSelectedFinderItems, showHUD, closeMainWindow, Cache, environment } from "@raycast/api";
+import {
+  showToast,
+  Toast,
+  getSelectedFinderItems,
+  showHUD,
+  closeMainWindow,
+  Cache,
+  environment,
+} from "@raycast/api";
 import { exec } from "child_process";
 import { promisify } from "util";
 import path from "path";
@@ -49,17 +57,20 @@ async function findPythonPath(): Promise<string | null> {
     "/usr/local/bin/python3",
     "/usr/bin/python3",
     "/opt/homebrew/bin/python3",
-    "python3"
+    "python3",
   ];
 
   for (const pythonPath of pythonPaths) {
     try {
       await execAsync(`${pythonPath} --version`);
       // Cache the found path
-      cache.set(PYTHON_PATH_CACHE_KEY, JSON.stringify({
-        pythonPath,
-        timestamp: Date.now()
-      }));
+      cache.set(
+        PYTHON_PATH_CACHE_KEY,
+        JSON.stringify({
+          pythonPath,
+          timestamp: Date.now(),
+        }),
+      );
       return pythonPath;
     } catch {
       // Try next path
@@ -108,7 +119,9 @@ export default async function Command() {
       return;
     }
 
-    const imagePath = decodeURIComponent(selectedItems[0].path.replace("file://", ""));
+    const imagePath = decodeURIComponent(
+      selectedItems[0].path.replace("file://", ""),
+    );
 
     // Validate file in one check
     const supportedFormats = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
@@ -165,7 +178,7 @@ export default async function Command() {
     }
 
     // Clean up old temp files in background (non-blocking)
-    const tempDir = path.join(require('os').tmpdir(), 'raycast-removebg');
+    const tempDir = path.join(require("os").tmpdir(), "raycast-removebg");
     cleanupOldTempFiles(tempDir).catch(() => {}); // Ignore errors
 
     // Execute the Python script with optimized buffer
@@ -189,7 +202,9 @@ export default async function Command() {
       }
 
       if (existsSync(outputPath)) {
-        await showHUD(`✅ Background removed! Saved as ${path.basename(outputPath)}`);
+        await showHUD(
+          `✅ Background removed! Saved as ${path.basename(outputPath)}`,
+        );
       } else {
         throw new Error("Output file was not created");
       }
@@ -209,7 +224,10 @@ export default async function Command() {
       } else if (errorMessage.includes("Permission denied")) {
         title = "Permission Error";
         message = "Check file permissions";
-      } else if (errorMessage.includes("Memory") || errorMessage.includes("memory")) {
+      } else if (
+        errorMessage.includes("Memory") ||
+        errorMessage.includes("memory")
+      ) {
         title = "Out of Memory";
         message = "Image too large to process";
       } else if (environment.isDevelopment) {
@@ -238,7 +256,8 @@ export default async function Command() {
     await showToast({
       style: Toast.Style.Failure,
       title: "Error",
-      message: error instanceof Error ? error.message : "An unexpected error occurred",
+      message:
+        error instanceof Error ? error.message : "An unexpected error occurred",
     });
   }
 }

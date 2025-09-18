@@ -48,9 +48,9 @@ Before using this extension, you need to install Python and the required package
    cd removebg-raycast
    ```
 
-2. Install Node.js dependencies with pnpm:
+2. Install Node.js dependencies with npm:
    ```bash
-   pnpm install
+   npm install
    ```
 
 3. Install Python dependencies with uv:
@@ -60,12 +60,12 @@ Before using this extension, you need to install Python and the required package
 
 4. Build the extension:
    ```bash
-   pnpm run build
+   npm run build
    ```
 
 5. Import to Raycast:
    ```bash
-   pnpm run publish
+   npm run publish
    ```
 
    Or manually import via Raycast preferences.
@@ -127,23 +127,23 @@ The first time you use the extension, rembg will download its AI model (~180MB).
 
 ### Setup
 ```bash
-pnpm install
+npm install
 uv pip install -r requirements.txt
 ```
 
 ### Development mode
 ```bash
-pnpm run dev
+npm run dev
 ```
 
 ### Build
 ```bash
-pnpm run build
+npm run build
 ```
 
 ### Lint
 ```bash
-pnpm run lint
+npm run lint
 ```
 
 ## Project Structure
@@ -155,7 +155,7 @@ removebg-raycast/
 ├── scripts/
 │   └── remove_bg.py      # Python script for background removal
 ├── package.json          # Project configuration
-├── pnpm-lock.yaml        # pnpm lock file
+├── package-lock.json     # npm lock file
 ├── requirements.txt      # Python dependencies
 ├── tsconfig.json         # TypeScript configuration
 └── README.md            # This file

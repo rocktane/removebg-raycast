@@ -4,7 +4,7 @@
   "title": "Remove Background",
   "description": "Remove background from selected images in Finder using local AI processing",
   "icon": "✂️",
-  "author": "yohan",
+  "author": "rocktane",
   "categories": ["Media", "Productivity"],
   "license": "MIT",
   "commands": [

@@ -15,8 +15,20 @@ import { existsSync, statSync } from "fs";
 
 const execAsync = promisify(exec);
 const cache = new Cache();
-const PYTHON_PATH_CACHE_KEY = "python_path";
+const PYTHON_PATH_CACHE_KEY = "python_path_v3"; // Changed to invalidate old cache
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+// A Python interpreter is only usable if it can actually import rembg.
+// Checking `--version` is not enough: it accepts interpreters (e.g. Homebrew's)
+// where rembg isn't installed, which then fails at runtime.
+async function pythonHasRembg(pythonPath: string): Promise<boolean> {
+  try {
+    await execAsync(`${pythonPath} -c "import rembg"`);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Get optimal buffer size based on file size
 function getOptimalBufferSize(imagePath: string): number {
@@ -38,31 +50,46 @@ async function findPythonPath(): Promise<string | null> {
     try {
       const { pythonPath, timestamp } = JSON.parse(cachedData);
       if (Date.now() - timestamp < CACHE_DURATION) {
-        // Verify it still works
-        try {
-          await execAsync(`${pythonPath} --version`);
+        // Verify it still works AND still has rembg
+        if (await pythonHasRembg(pythonPath)) {
           return pythonPath;
-        } catch {
-          // Cache is stale, continue to search
         }
+        // Cache is stale, continue to search
       }
     } catch {
       // Invalid cache, continue
     }
   }
 
-  // Search for Python
+  // Search for Python - prioritize the project's venv with absolute path
   const pythonPaths = [
+    "/Users/yohan/code/raycast/removebg/.venv/bin/python3",
     "/Users/yohan/.pyenv/shims/python3",
     "/usr/local/bin/python3",
-    "/usr/bin/python3",
     "/opt/homebrew/bin/python3",
+    "/usr/bin/python3",
     "python3",
   ];
 
   for (const pythonPath of pythonPaths) {
     try {
-      await execAsync(`${pythonPath} --version`);
+      // Check if file exists first (for absolute paths)
+      if (pythonPath.startsWith("/") && !existsSync(pythonPath)) {
+        if (environment.isDevelopment) {
+          console.log(`Python path does not exist: ${pythonPath}`);
+        }
+        continue;
+      }
+      // Only accept an interpreter that can actually import rembg
+      if (!(await pythonHasRembg(pythonPath))) {
+        if (environment.isDevelopment) {
+          console.log(`Python lacks rembg: ${pythonPath}`);
+        }
+        continue;
+      }
+      if (environment.isDevelopment) {
+        console.log(`Found working Python: ${pythonPath}`);
+      }
       // Cache the found path
       cache.set(
         PYTHON_PATH_CACHE_KEY,
@@ -72,8 +99,10 @@ async function findPythonPath(): Promise<string | null> {
         }),
       );
       return pythonPath;
-    } catch {
-      // Try next path
+    } catch (e) {
+      if (environment.isDevelopment) {
+        console.log(`Python path failed: ${pythonPath}`, e);
+      }
     }
   }
 
@@ -163,8 +192,15 @@ export default async function Command() {
     const outputPath = path.join(dir, `${basename}-bg${outputExt}`);
 
     // Use existing Python script from scripts directory
-    // In production, scripts are copied to dist/scripts
-    const scriptPath = path.join(__dirname, "scripts", "remove_bg.py");
+    // In production, scripts are copied to dist/scripts (build step).
+    // In dev mode (`ray develop`), scripts aren't copied next to the bundle,
+    // so fall back to the script in the project source tree.
+    const scriptCandidates = [
+      path.join(__dirname, "scripts", "remove_bg.py"),
+      "/Users/yohan/code/raycast/removebg/scripts/remove_bg.py",
+    ];
+    const scriptPath =
+      scriptCandidates.find((p) => existsSync(p)) ?? scriptCandidates[0];
 
     // Find Python with caching
     const pythonPath = await findPythonPath();

@@ -1,2 +1,3 @@
-rembg>=2.0.67
+rembg>=2.0.61
 Pillow>=10.0.0
+onnxruntime>=1.19.0

@@ -7,13 +7,14 @@ import {
   Cache,
   environment,
 } from "@raycast/api";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
+import os from "os";
 import path from "path";
 import fs from "fs/promises";
 import { existsSync, statSync } from "fs";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const cache = new Cache();
 const PYTHON_PATH_CACHE_KEY = "python_path_v3"; // Changed to invalidate old cache
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
@@ -23,7 +24,7 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 // where rembg isn't installed, which then fails at runtime.
 async function pythonHasRembg(pythonPath: string): Promise<boolean> {
   try {
-    await execAsync(`${pythonPath} -c "import rembg"`);
+    await execFileAsync(pythonPath, ["-c", "import rembg"]);
     return true;
   } catch {
     return false;
@@ -61,10 +62,14 @@ async function findPythonPath(): Promise<string | null> {
     }
   }
 
-  // Search for Python - prioritize the project's venv with absolute path
+  // Search for Python - prioritize the project's venv with absolute path.
+  // The bundle runs from the launcher's install folder, and an app started from
+  // the Dock doesn't get the terminal's PATH, so a bare python3 isn't enough.
+  const home = os.homedir();
   const pythonPaths = [
-    "/Users/yohan/code/raycast/removebg/.venv/bin/python3",
-    "/Users/yohan/.pyenv/shims/python3",
+    path.join(home, "code/tinycast/removebg/.venv/bin/python3"),
+    path.join(home, "code/raycast/removebg/.venv/bin/python3"),
+    path.join(home, ".pyenv/shims/python3"),
     "/usr/local/bin/python3",
     "/opt/homebrew/bin/python3",
     "/usr/bin/python3",
@@ -148,9 +153,8 @@ export default async function Command() {
       return;
     }
 
-    const imagePath = decodeURIComponent(
-      selectedItems[0].path.replace("file://", ""),
-    );
+    // Already a plain POSIX path: decoding it would break names containing "%"
+    const imagePath = selectedItems[0].path;
 
     // Validate file in one check
     const supportedFormats = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
@@ -187,44 +191,36 @@ export default async function Command() {
 
     // Get output path
     const dir = path.dirname(imagePath);
-    const basename = path.basename(imagePath, fileExt);
+    const basename = path.parse(imagePath).name;
     const outputExt = [".png", ".webp"].includes(fileExt) ? fileExt : ".png";
     const outputPath = path.join(dir, `${basename}-bg${outputExt}`);
 
-    // Use existing Python script from scripts directory
-    // In production, scripts are copied to dist/scripts (build step).
-    // In dev mode (`ray develop`), scripts aren't copied next to the bundle,
-    // so fall back to the script in the project source tree.
-    const scriptCandidates = [
-      path.join(__dirname, "scripts", "remove_bg.py"),
-      "/Users/yohan/code/raycast/removebg/scripts/remove_bg.py",
-    ];
-    const scriptPath =
-      scriptCandidates.find((p) => existsSync(p)) ?? scriptCandidates[0];
+    // Assets are the only extra files Raycast and Tinycast both install
+    const scriptPath = path.join(environment.assetsPath, "remove_bg.py");
 
     // Find Python with caching
     const pythonPath = await findPythonPath();
     if (!pythonPath) {
       await showToast({
         style: Toast.Style.Failure,
-        title: "Python Not Found",
-        message: "Please install Python 3 first",
+        title: "Python with rembg Not Found",
+        message: "Run: uv pip install -r requirements.txt",
       });
       return;
     }
 
     // Clean up old temp files in background (non-blocking)
-    const tempDir = path.join(require("os").tmpdir(), "raycast-removebg");
+    const tempDir = path.join(os.tmpdir(), "raycast-removebg");
     cleanupOldTempFiles(tempDir).catch(() => {}); // Ignore errors
 
     // Execute the Python script with optimized buffer
-    const command = `${pythonPath} "${scriptPath}" "${imagePath}" "${outputPath}"`;
+    const args = [scriptPath, imagePath, outputPath];
     const bufferSize = getOptimalBufferSize(imagePath);
 
     try {
       const startTime = environment.isDevelopment ? Date.now() : 0;
 
-      const { stdout, stderr } = await execAsync(command, {
+      const { stdout, stderr } = await execFileAsync(pythonPath, args, {
         maxBuffer: bufferSize,
       });
 
@@ -266,9 +262,10 @@ export default async function Command() {
       ) {
         title = "Out of Memory";
         message = "Image too large to process";
-      } else if (environment.isDevelopment) {
-        // Only show detailed errors in dev mode
-        message = errorMessage.substring(0, 100);
+      } else {
+        // The last line says what went wrong: there is no log to read outside dev mode
+        const lastLine = errorMessage.trim().split("\n").pop();
+        message = lastLine.substring(0, 100);
       }
 
       await showToast({
@@ -280,7 +277,7 @@ export default async function Command() {
       // Log full error only in development
       if (environment.isDevelopment) {
         console.error("Full error:", error);
-        console.error("Command was:", command);
+        console.error("Command was:", pythonPath, args);
       }
     }
   } catch (error) {

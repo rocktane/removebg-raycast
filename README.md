@@ -1,6 +1,6 @@
-# Remove Background - Raycast Extension
+# Remove Background - Tinycast / Raycast Extension
 
-A Raycast extension that removes backgrounds from images using local AI processing. Select any image in Finder and instantly remove its background with a single command.
+A [Tinycast](https://github.com/abue-ammar/tinycast) and Raycast extension that removes backgrounds from images using local AI processing. Select any image in Finder and instantly remove its background with a single command.
 
 ## Features
 
@@ -70,10 +70,26 @@ Before using this extension, you need to install Python and the required package
 
    Or manually import via Raycast preferences.
 
+### Install in Tinycast
+
+Tinycast runs the Python script with the interpreter from `.venv`, so create it in this folder:
+
+```bash
+uv venv
+uv pip install -r requirements.txt
+npm install
+npx ray build -e dist -o dist
+```
+
+Then, in Tinycast: **Settings → Extensions → Install → Add from folder**, and choose `dist`.
+Install again the same way after each change.
+
+Tinycast asks for permission to control Finder the first time, and for access to protected folders such as Desktop or Downloads when an image is there. If the extension reports "No Image Selected" with an image selected, check **System Settings → Privacy & Security → Automation**.
+
 ## Usage
 
 1. Open Finder and select an image file
-2. Open Raycast (⌘ + Space by default)
+2. Open Tinycast or Raycast
 3. Search for "Remove Background"
 4. Press Enter
 
@@ -102,12 +118,15 @@ This extension uses:
 
 ## Troubleshooting
 
-### "Python Not Found" error
-Make sure Python 3 is installed and accessible. The extension looks for Python in common locations:
+### "Python with rembg Not Found" error
+The extension uses the first interpreter that can import `rembg`, among:
+- `~/code/tinycast/removebg/.venv/bin/python3`
+- `~/code/raycast/removebg/.venv/bin/python3`
 - `/usr/local/bin/python3`
 - `/usr/bin/python3`
 - `/opt/homebrew/bin/python3` (Apple Silicon Macs)
 - `~/.pyenv/shims/python3` (if using pyenv)
+- `python3` from the `PATH`
 
 ### "REMBG Not Installed" error
 Install the required packages:
@@ -152,7 +171,8 @@ npm run lint
 removebg-raycast/
 ├── src/
 │   └── remove-bg.tsx     # Main background removal command
-├── scripts/
+├── assets/
+│   ├── command-icon.svg  # Command icon
 │   └── remove_bg.py      # Python script for background removal
 ├── package.json          # Project configuration
 ├── package-lock.json     # npm lock file

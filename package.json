@@ -10,9 +10,9 @@
   "commands": [
     {
       "name": "remove-bg",
-      "title": "Remove Background from Selected Image",
-      "subtitle": "Process selected image in Finder",
-      "description": "Removes the background from the selected image in Finder and saves it with -bg suffix",
+      "title": "Remove Background from Selected Images",
+      "subtitle": "Process selected images in Finder",
+      "description": "Removes the background from the selected images in Finder and saves them with -bg suffix",
       "mode": "no-view"
     }
   ],

@@ -7,38 +7,46 @@ import {
   Cache,
   environment,
 } from "@raycast/api";
-import { exec } from "child_process";
+import { execFile } from "child_process";
 import { promisify } from "util";
+import os from "os";
 import path from "path";
-import fs from "fs/promises";
 import { existsSync, statSync } from "fs";
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 const cache = new Cache();
 const PYTHON_PATH_CACHE_KEY = "python_path_v3"; // Changed to invalidate old cache
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
-// A Python interpreter is only usable if it can actually import rembg.
-// Checking `--version` is not enough: it accepts interpreters (e.g. Homebrew's)
-// where rembg isn't installed, which then fails at runtime.
+const SUPPORTED_FORMATS = [
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".bmp",
+  ".heic",
+  ".heif",
+];
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
+// Results are short JSON lines, but a model download also writes its progress
+const MAX_OUTPUT_BUFFER = 10 * 1024 * 1024;
+
+// `--version` would accept interpreters (e.g. Homebrew's) where rembg isn't
+// installed. Importing rembg would cost as much as the script's own import, so
+// only look its dependencies up; the script reports an install that is broken.
+const CHECK_DEPENDENCIES = `
+import importlib.util, sys
+missing = [m for m in ("rembg", "onnxruntime", "PIL") if not importlib.util.find_spec(m)]
+sys.exit(1 if missing else 0)
+`;
+
 async function pythonHasRembg(pythonPath: string): Promise<boolean> {
   try {
-    await execAsync(`${pythonPath} -c "import rembg"`);
+    await execFileAsync(pythonPath, ["-c", CHECK_DEPENDENCIES]);
     return true;
   } catch {
     return false;
-  }
-}
-
-// Get optimal buffer size based on file size
-function getOptimalBufferSize(imagePath: string): number {
-  try {
-    const stats = statSync(imagePath);
-    const fileSizeBytes = stats.size;
-    // Scale buffer: 2x file size, min 1MB, max 50MB
-    return Math.min(Math.max(fileSizeBytes * 2, 1024 * 1024), 50 * 1024 * 1024);
-  } catch {
-    return 10 * 1024 * 1024; // Default 10MB
   }
 }
 
@@ -61,10 +69,14 @@ async function findPythonPath(): Promise<string | null> {
     }
   }
 
-  // Search for Python - prioritize the project's venv with absolute path
+  // Search for Python - prioritize the project's venv with absolute path.
+  // The bundle runs from the launcher's install folder, and an app started from
+  // the Dock doesn't get the terminal's PATH, so a bare python3 isn't enough.
+  const home = os.homedir();
   const pythonPaths = [
-    "/Users/yohan/code/raycast/removebg/.venv/bin/python3",
-    "/Users/yohan/.pyenv/shims/python3",
+    path.join(home, "code/tinycast/removebg/.venv/bin/python3"),
+    path.join(home, "code/raycast/removebg/.venv/bin/python3"),
+    path.join(home, ".pyenv/shims/python3"),
     "/usr/local/bin/python3",
     "/opt/homebrew/bin/python3",
     "/usr/bin/python3",
@@ -80,7 +92,7 @@ async function findPythonPath(): Promise<string | null> {
         }
         continue;
       }
-      // Only accept an interpreter that can actually import rembg
+      // Only accept an interpreter that has rembg
       if (!(await pythonHasRembg(pythonPath))) {
         if (environment.isDevelopment) {
           console.log(`Python lacks rembg: ${pythonPath}`);
@@ -109,28 +121,89 @@ async function findPythonPath(): Promise<string | null> {
   return null;
 }
 
-// Clean up old temporary files
-async function cleanupOldTempFiles(tempDir: string): Promise<void> {
-  try {
-    if (!existsSync(tempDir)) return;
+type Feedback = { title: string; message: string };
+type ImageResult = { input: string; output?: string; error?: string };
 
-    const files = await fs.readdir(tempDir);
-    const oneHourAgo = Date.now() - 3600000;
-
-    for (const file of files) {
-      const filePath = path.join(tempDir, file);
-      try {
-        const stats = await fs.stat(filePath);
-        if (stats.mtime.getTime() < oneHourAgo) {
-          await fs.unlink(filePath);
-        }
-      } catch {
-        // Ignore errors for individual files
-      }
-    }
-  } catch {
-    // Ignore cleanup errors
+function rejectionFor(imagePath: string): Feedback | null {
+  if (!existsSync(imagePath)) {
+    return {
+      title: "File Not Found",
+      message: "The selected file could not be found",
+    };
   }
+  if (!SUPPORTED_FORMATS.includes(path.extname(imagePath).toLowerCase())) {
+    return {
+      title: "Invalid File Type",
+      message: `Please select an image file (${SUPPORTED_FORMATS.join(", ")})`,
+    };
+  }
+  let size: number;
+  try {
+    ({ size } = statSync(imagePath));
+  } catch {
+    // Gone since the check above: it must not cost the rest of the selection
+    return {
+      title: "File Not Found",
+      message: "The selected file could not be found",
+    };
+  }
+  if (size > MAX_FILE_SIZE) {
+    return {
+      title: "File Too Large",
+      message: `File size (${(size / 1024 / 1024).toFixed(1)}MB) exceeds limit (100MB)`,
+    };
+  }
+  return null;
+}
+
+// Rembg and its dependencies may write to stdout too, so skip what isn't a result
+function parseResults(stdout: string): ImageResult[] {
+  const results: ImageResult[] = [];
+  for (const line of stdout.split("\n")) {
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed?.input) results.push(parsed);
+    } catch {
+      // Not a result line
+    }
+  }
+  return results;
+}
+
+function describeError(errorMessage: string): Feedback {
+  if (errorMessage.includes("No module named 'rembg'")) {
+    return {
+      title: "REMBG Not Installed",
+      message: "Run: uv pip install -r requirements.txt",
+    };
+  }
+  if (errorMessage.includes("No module named 'onnxruntime'")) {
+    return {
+      title: "ONNXRuntime Not Installed",
+      message: "Run: uv pip install -r requirements.txt",
+    };
+  }
+  if (errorMessage.includes("Permission denied")) {
+    return { title: "Permission Error", message: "Check file permissions" };
+  }
+  if (errorMessage.includes("Memory") || errorMessage.includes("memory")) {
+    return { title: "Out of Memory", message: "Image too large to process" };
+  }
+  // The last line says what went wrong: there is no log to read outside dev mode
+  const lastLine = errorMessage.trim().split("\n").pop() ?? "";
+  return {
+    title: "Processing Failed",
+    message: lastLine.substring(0, 100) || "Failed to remove background",
+  };
+}
+
+// Which file failed only needs saying when several were selected
+function withFileName(
+  message: string,
+  input: string | undefined,
+  total: number,
+): string {
+  return input && total > 1 ? `${path.basename(input)}: ${message}` : message;
 }
 
 export default async function Command() {
@@ -148,141 +221,107 @@ export default async function Command() {
       return;
     }
 
-    const imagePath = decodeURIComponent(
-      selectedItems[0].path.replace("file://", ""),
-    );
-
-    // Validate file in one check
-    const supportedFormats = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
-    const fileExt = path.extname(imagePath).toLowerCase();
-
-    if (!supportedFormats.includes(fileExt) || !existsSync(imagePath)) {
-      await showToast({
-        style: Toast.Style.Failure,
-        title: !existsSync(imagePath) ? "File Not Found" : "Invalid File Type",
-        message: !existsSync(imagePath)
-          ? "The selected file could not be found"
-          : `Please select an image file (${supportedFormats.join(", ")})`,
-      });
-      return;
+    // Already plain POSIX paths: decoding them would break names containing "%"
+    const images: string[] = [];
+    const rejections: (Feedback & { input: string })[] = [];
+    for (const { path: imagePath } of selectedItems) {
+      const rejection = rejectionFor(imagePath);
+      if (rejection) {
+        rejections.push({ ...rejection, input: imagePath });
+      } else {
+        images.push(imagePath);
+      }
     }
 
-    // Check file size (max 100MB)
-    const stats = statSync(imagePath);
-    const maxSize = 100 * 1024 * 1024;
-    if (stats.size > maxSize) {
+    if (images.length === 0) {
+      const { input, title, message } = rejections[0];
       await showToast({
         style: Toast.Style.Failure,
-        title: "File Too Large",
-        message: `File size (${(stats.size / 1024 / 1024).toFixed(1)}MB) exceeds limit (100MB)`,
+        title,
+        message: withFileName(message, input, selectedItems.length),
       });
       return;
     }
 
     await showToast({
       style: Toast.Style.Animated,
-      title: "Processing Image",
-      message: "Removing background...",
+      title: images.length === 1 ? "Processing Image" : "Processing Images",
+      message:
+        images.length === 1
+          ? "Removing background..."
+          : `Removing background from ${images.length} images...`,
     });
 
-    // Get output path
-    const dir = path.dirname(imagePath);
-    const basename = path.basename(imagePath, fileExt);
-    const outputExt = [".png", ".webp"].includes(fileExt) ? fileExt : ".png";
-    const outputPath = path.join(dir, `${basename}-bg${outputExt}`);
-
-    // Use existing Python script from scripts directory
-    // In production, scripts are copied to dist/scripts (build step).
-    // In dev mode (`ray develop`), scripts aren't copied next to the bundle,
-    // so fall back to the script in the project source tree.
-    const scriptCandidates = [
-      path.join(__dirname, "scripts", "remove_bg.py"),
-      "/Users/yohan/code/raycast/removebg/scripts/remove_bg.py",
-    ];
-    const scriptPath =
-      scriptCandidates.find((p) => existsSync(p)) ?? scriptCandidates[0];
+    // Assets are the only extra files Raycast and Tinycast both install
+    const scriptPath = path.join(environment.assetsPath, "remove_bg.py");
 
     // Find Python with caching
     const pythonPath = await findPythonPath();
     if (!pythonPath) {
       await showToast({
         style: Toast.Style.Failure,
-        title: "Python Not Found",
-        message: "Please install Python 3 first",
+        title: "Python with rembg Not Found",
+        message: "Run: uv pip install -r requirements.txt",
       });
       return;
     }
 
-    // Clean up old temp files in background (non-blocking)
-    const tempDir = path.join(require("os").tmpdir(), "raycast-removebg");
-    cleanupOldTempFiles(tempDir).catch(() => {}); // Ignore errors
-
-    // Execute the Python script with optimized buffer
-    const command = `${pythonPath} "${scriptPath}" "${imagePath}" "${outputPath}"`;
-    const bufferSize = getOptimalBufferSize(imagePath);
+    // One process for the whole selection: loading the model is the slow part
+    const args = [scriptPath, ...images];
+    let stdout = "";
+    let fatalError: string | null = null;
+    const startTime = Date.now();
 
     try {
-      const startTime = environment.isDevelopment ? Date.now() : 0;
-
-      const { stdout, stderr } = await execAsync(command, {
-        maxBuffer: bufferSize,
-      });
-
-      // Only log in development mode
-      if (environment.isDevelopment) {
-        console.log(`Execution time: ${Date.now() - startTime}ms`);
-        if (stdout) console.log("Output:", stdout);
-        if (stderr && !stderr.includes("UserWarning")) {
-          console.error("Stderr:", stderr);
-        }
-      }
-
-      if (existsSync(outputPath)) {
-        await showHUD(
-          `✅ Background removed! Saved as ${path.basename(outputPath)}`,
-        );
-      } else {
-        throw new Error("Output file was not created");
-      }
+      ({ stdout } = await execFileAsync(pythonPath, args, {
+        maxBuffer: MAX_OUTPUT_BUFFER,
+      }));
     } catch (error: any) {
-      // Improved error categorization
-      const errorMessage = error.message || error.toString();
-
-      let title = "Processing Failed";
-      let message = "Failed to remove background";
-
-      if (errorMessage.includes("No module named 'rembg'")) {
-        title = "REMBG Not Installed";
-        message = "Run: uv pip install rembg pillow";
-      } else if (errorMessage.includes("No module named 'onnxruntime'")) {
-        title = "ONNXRuntime Not Installed";
-        message = "Run: uv pip install onnxruntime";
-      } else if (errorMessage.includes("Permission denied")) {
-        title = "Permission Error";
-        message = "Check file permissions";
-      } else if (
-        errorMessage.includes("Memory") ||
-        errorMessage.includes("memory")
-      ) {
-        title = "Out of Memory";
-        message = "Image too large to process";
-      } else if (environment.isDevelopment) {
-        // Only show detailed errors in dev mode
-        message = errorMessage.substring(0, 100);
-      }
-
-      await showToast({
-        style: Toast.Style.Failure,
-        title,
-        message,
-      });
-
-      // Log full error only in development
+      // Images finished before the failure are saved, so still count them
+      stdout = error.stdout ?? "";
+      // Not error.message: it repeats the command, and so the selected file names
+      fatalError = error.stderr?.trim() || "Python stopped before finishing";
       if (environment.isDevelopment) {
         console.error("Full error:", error);
-        console.error("Command was:", command);
+        console.error("Command was:", pythonPath, args);
       }
     }
+
+    if (environment.isDevelopment) {
+      console.log(`Execution time: ${Date.now() - startTime}ms`);
+      console.log("Output:", stdout);
+    }
+
+    const results = parseResults(stdout);
+    const saved = results.filter((result) => result.output);
+    const failed = results.find((result) => result.error);
+    const firstError = fatalError ?? failed?.error;
+    const total = selectedItems.length;
+
+    if (saved.length === total) {
+      await showHUD(
+        total === 1
+          ? `✅ Background removed! Saved as ${path.basename(saved[0].output as string)}`
+          : `✅ Background removed from ${total} images`,
+      );
+      return;
+    }
+
+    const feedback = firstError
+      ? describeError(firstError)
+      : (rejections[0] ?? describeError("Output file was not created"));
+    await showToast({
+      style: Toast.Style.Failure,
+      title:
+        saved.length > 0
+          ? `${saved.length} of ${total} Images Processed`
+          : feedback.title,
+      message: withFileName(
+        feedback.message,
+        fatalError ? undefined : (failed?.input ?? rejections[0]?.input),
+        total,
+      ),
+    });
   } catch (error) {
     // Only log in development
     if (environment.isDevelopment) {
